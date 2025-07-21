@@ -165,5 +165,3 @@ def make_gear():
     Gear(obj)
     obj.ViewObject.Proxy = 0
     App.ActiveDocument.recompute()
-
-make_gear()
