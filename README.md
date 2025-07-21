@@ -1,4 +1,4 @@
-# freecad-macros
+# freecad-macro
 FreeCAD Macros and FeaturePython Objects
 
 ## installation
