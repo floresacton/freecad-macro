@@ -1,0 +1,6 @@
+try:
+    from macro.gear.gear import make_gear
+except ModuleNotFoundError:
+    from gear.gear import make_gear
+
+make_gear()

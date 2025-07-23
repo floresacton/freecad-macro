@@ -1,3 +1,0 @@
-from fpo.gear.gear import make_gear
-
-make_gear()

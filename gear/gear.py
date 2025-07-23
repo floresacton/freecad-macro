@@ -1,164 +1,271 @@
 import Part
 import FreeCAD as App
+
+import numpy as np
+from scipy.optimize import least_squares, fsolve
 import math
 
-def frange(start, stop, step):
-    while start < stop:
-        yield round(start, 10)
-        start += step
+def mirror_x(v):
+    return App.Vector(-v.x, v.y, 0)
 
-def rotate(point, angle):
-    x = point[0] * math.cos(angle) - point[1] * math.sin(angle)
-    y = point[0] * math.sin(angle) + point[1] * math.cos(angle)
-    return (x,y,)
+# DEFINITIONS
+# pcl = teeth * module / 2 * angle_torchoid - module*math.tan(pressure_angle)
+# dedendum_radius = teeth * module / 2 - module
+
+# base_rad_angle = teeth * module / 2 * math.cos(pressure_angle) * angle_cycloid
+# base_radius = teeth * module / 2 * math.cos(pressure_angle)
+
+# NORMALIZED
+# pcl = angle_torchoid - math.tan(pressure_angle)*(2*/teeth)
+# dedendum_radius = 1 - 2/teeth
+
+# base_rad_angle = math.cos(pressure_angle) * angle_involute
+# base_radius = math.cos(pressure_angle)
+
+# XY ANGLES (ok as long as teeth > 2, because math.tan)
+# = math.atan((teeth/2 - 1) / (teeth/2*angle_torchoid - math.tan(pressure_angle))) + angle_trochoid + math.pi / 2 * (1/teeth - 1) 
+# = math.atan(1/angle_involute) + angle_involute - math.tan(pressure_angle) - pressure_angle - math.pi/teeth/2
+
+# TOTAL ANGLES 
+# angle_involute = math.sqrt((target_radius / base_radius)**2 - 1)
+
+# angle_trochoid = (math.sqrt(target_radius**2-dedendum_radius**2) + t_distance)/pitch_radius
+
+
+
+# DISTANCES
+# 2*trochoid_r/module/teeth = math.hypot(trochoid_angle - 2*math.tan(pressure_angle)/teeth, 1 - 2/teeth)
+# 2*involute_r/module/teeth = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
+
+# = math.sqrt((trochoid_angle - 2*math.tan(pressure_angle)/teeth)**2 + (1 - 2/teeth)**2)
+# = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
+
+# = math.sqrt((trochoid_angle/math.tan(pressure_angle) - 2/teeth)**2 + (1 - 2/teeth)**2 / math.tan(pressure_angle)**2) * math.tan(pressure_angle)
+# = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
+
+# x = pcl,            y = dedendum_radius
+# x = base_rad_angle, y = base_radius
+
+
+def trochoid_point(param, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius):
+    theta = trochoid_beta - param
+    
+    cos_theta = math.cos(theta)
+    sin_theta = math.sin(theta)
+    
+    temp = pitch_radius * param - trochoid_distance
+    
+    x = dedendum_radius * cos_theta - temp * sin_theta 
+    y = dedendum_radius * sin_theta + temp * cos_theta
+    
+    return np.array([x, y])
+    
+def involute_point(param, involute_beta, base_radius):
+    theta = involute_beta + param
+
+    cos_theta = math.cos(theta)
+    sin_theta = math.sin(theta)
+
+    temp = base_radius * param
+
+    x = temp * cos_theta - base_radius * sin_theta
+    y = temp * sin_theta + base_radius * cos_theta
+    
+    return np.array([x, y])
 
 class Gear:
     def __init__(self, obj):
-      obj.Proxy = self
-      obj.addProperty("App::PropertyQuantity","Teeth").Teeth = 4
-      obj.addProperty("App::PropertyLength","Module").Module = 2
-      obj.addProperty("App::PropertyLength","Height").Height = 2
-      obj.addProperty("App::PropertyAngle","HelixAngle").HelixAngle = 20
-      obj.addProperty("App::PropertyAngle","PressureAngle").PressureAngle = 20
+        obj.Proxy = self
+        obj.addProperty("App::PropertyQuantity","Teeth").Teeth = 12
+        obj.addProperty("App::PropertyLength","Module").Module = 2
+        obj.addProperty("App::PropertyLength","Height").Height = 10
+        obj.addProperty("App::PropertyAngle","HelixAngle").HelixAngle = 20
+        obj.addProperty("App::PropertyBool", "DoubleHelix").DoubleHelix = True
+        obj.addProperty("App::PropertyBool", "ReverseHelix").ReverseHelix = False
+        obj.addProperty("App::PropertyAngle","PressureAngle").PressureAngle = 20
+        obj.addProperty("App::PropertyQuantity","BacklashFactor").BacklashFactor = 0.05
+        obj.addProperty("App::PropertyQuantity","DedendumFactor").DedendumFactor = 1.25
+        obj.addProperty("App::PropertyQuantity","AddendumFactor").AddendumFactor = 1
+        obj.addProperty("App::PropertyQuantity","ProfileShiftFactor").ProfileShiftFactor = 0
+        obj.addProperty("App::PropertyQuantity","PointsPerTooth").PointsPerTooth = 40
 
     def execute(self, obj):
-        points = 40
-        loft_step = 0.25 # steps per tooth
-        #clearance_factor = 1.0
-        #backlash = 0.0
-        
         teeth = int(obj.Teeth)
         module = float(obj.Module)
         height = float(obj.Height)
-        helix_angle = float(obj.HelixAngle)/180 * math.pi
-        pressure_angle = float(obj.PressureAngle)/180 * math.pi
-        
-        pitch_radius = teeth * module / 2.0
-        base_radius = pitch_radius * math.cos(pressure_angle)
-        
-        alpha = math.sqrt(pitch_radius**2 - base_radius**2) / base_radius - pressure_angle
-        beta = (math.pi/2) / teeth - alpha
+        helix_angle = math.radians(float(obj.HelixAngle))
+        double_helix = bool(obj.DoubleHelix)
+        reverse_helix = bool(obj.ReverseHelix)
+        pressure_angle = math.radians(float(obj.PressureAngle))
+        backlash_factor = float(obj.BacklashFactor)
+        dedendum_factor = float(obj.DedendumFactor)
+        addendum_factor = float(obj.AddendumFactor)
+        profile_shift_factor = float(obj.ProfileShiftFactor)
+        points_per_tooth = int(obj.PointsPerTooth)
 
-        dedendum = module # add clearance factor here
-        addendum = module # add clearance factor here
+        tooth_edges = self.tooth_edges(teeth, module, pressure_angle, backlash_factor, dedendum_factor, addendum_factor, profile_shift_factor, points_per_tooth)
 
-        dedendum_radius = pitch_radius - dedendum
-        addendum_radius = pitch_radius + addendum
-
-        if helix_angle != 0:
-            lead = 2 * math.pi * pitch_radius / math.tan(helix_angle)
-
-        # start logic here
-        dedendum_line = base_radius > dedendum_radius
-
-        involute_points = self.involute_points(beta, base_radius, addendum_radius, dedendum_radius, points)
-    
-        wire_list = []
-
-        first_point = None
-        last_point = None
-
-        for tooth_index in range(teeth):
-            spline1_points = []
-            spline2_points = []
-
-            for point in involute_points:
-                p1 = (point[1], point[0])
-                p1 = rotate(p1, (math.pi/teeth) * (1 + 2*tooth_index))
-                spline1_points.append(App.Vector(p1[0], p1[1], 0))
-
-                p2 = (-point[1], point[0])
-                p2 = rotate(p2, (math.pi/teeth) * (1 + 2*tooth_index))
-                spline2_points.append(App.Vector(p2[0], p2[1], 0))
-
-            spline1 = Part.BSplineCurve()
-            spline1.interpolate(spline1_points)
-
-            spline2 = Part.BSplineCurve()
-            spline2.interpolate(spline2_points)
-
-            if tooth_index == 0:
-                first_point = spline1_points[-1]
-            else:
-                wire_list.append(Part.makeLine(spline1_points[-1], last_point))
-            
-            wire_list.append(spline1.toShape())
-            
-            if dedendum_line:
-                length = math.sqrt(spline1_points[0].x**2 + spline1_points[0].y**2)
-                scalar = dedendum_radius/length
-                
-                dedendum_point1 = App.Vector(spline1_points[0].x*scalar, spline1_points[0].y*scalar, 0)
-                dedendum_point2 = App.Vector(spline2_points[0].x*scalar, spline2_points[0].y*scalar, 0)
-                
-                wire_list.append(Part.makeLine(spline1_points[0], dedendum_point1))
-                wire_list.append(Part.makeLine(dedendum_point1, dedendum_point2))
-                wire_list.append(Part.makeLine(dedendum_point2, spline2_points[0]))
-            else:
-                wire_list.append(Part.makeLine(spline1_points[0], spline2_points[0]))
-            
-            wire_list.append(spline2.toShape())
-
-            if tooth_index == teeth-1:
-                wire_list.append(Part.makeLine(spline2_points[-1], first_point))
-
-            last_point = spline2_points[-1]
-
-        base_wire = Part.Wire(wire_list)
+        pitch_radius = teeth * module / 2
         
         angle_per_tooth = 360/teeth
-        angle_step = angle_per_tooth*loft_step
-        if helix_angle != 0:
-            angle_per_height = 360/lead
-            angle_total = angle_per_height * height
-            steps = math.ceil(angle_total/angle_step)
+        
+        center = App.Vector(0, 0, 0)
+        zaxis = App.Vector(0, 0, 1)
+        yaxis = App.Vector(0, 1, 0)
+        
+        edges = tooth_edges.copy()
+        for t in range(1, teeth):
+            angle = t * angle_per_tooth
+            for edge in tooth_edges:
+                edge_copy = edge.copy()
+                edge_copy.rotate(center, zaxis, angle)
+                edges.append(edge_copy)
+
+        wire = Part.Wire(edges)
+        
+        heightd2 = height/2
+        
+        if helix_angle == 0:
+            wire.translate(App.Vector(0,0,-heightd2))
+            face = Part.Face(wire)
+            
+            obj.Shape = face.extrude(App.Vector(0, 0, height))
         else:
-            steps = 1
-            angle_per_height = 0
+            lead = 2 * math.pi * pitch_radius / math.tan(helix_angle)
+            
+            helix = Part.makeHelix(lead, heightd2, 1, 0, reverse_helix)
+            
+            pipe_shell = Part.BRepOffsetAPI.MakePipeShell(helix)
+            pipe_shell.setFrenetMode(True)
+            pipe_shell.add(wire)
+            pipe_shell.build()
+            
+            wire_top = pipe_shell.lastShape()
+            face_top = Part.Face(wire_top)
+            
+            shell_top = pipe_shell.shape().Faces + [face_top]
+            
+            shell_faces = shell_top.copy()
+            for face in shell_top:
+                if double_helix:
+                    new_face = face.mirror(center, zaxis)
+                else:
+                    new_face = face.copy().rotate(center, yaxis, 180)
+                shell_faces.append(new_face)
+
+            shell = Part.makeShell(shell_faces)
+            
+            obj.Shape = Part.makeSolid(shell)
         
-        wires_top = []
-        wires_bottom = []
-        for index in range(1, steps + 1):
-            z = height * index / steps
-            angle_deg = angle_per_height * z
-            
-            wire_top = base_wire.copy()
-            wire_bottom = base_wire.copy()
-            
-            wire_top.rotate(App.Vector(0,0,1), App.Vector(0,0,1), angle_deg)
-            wire_top.translate(App.Vector(0,0,z))
-            
-            wire_bottom.rotate(App.Vector(0,0,1), App.Vector(0,0,1), angle_deg)
-            wire_bottom.translate(App.Vector(0,0,-z))
-            
-            wires_top.append(wire_top)
-            wires_bottom.append(wire_bottom)
-
-        wires_bottom.reverse()
-        wires_bottom.append(base_wire)
-        wires_bottom.extend(wires_top)
-
-        obj.Shape = Part.makeLoft(wires_bottom, True, True)
+    def tooth_edges(self, teeth, module, pressure_angle, backlash_factor, dedendum_factor, addendum_factor, profile_shift_factor, points_per_tooth):
+        backlash = module * backlash_factor
+        profile_shift = module * profile_shift_factor
+        dedendum = module * dedendum_factor - profile_shift
+        addendum = module * addendum_factor + profile_shift
         
-    def involute_points(self, beta, base_radius, addendum_radius, dedendum_radius, points):
-        involute = []
+        pitch_radius = module * teeth / 2
+        base_radius = pitch_radius * math.cos(pressure_angle)
+        dedendum_radius = pitch_radius - dedendum
+        addendum_radius = pitch_radius + addendum
+        
+        tan_pressure = math.tan(pressure_angle)
 
-        angle_start = 0
-        if base_radius <= dedendum_radius:
-            angle_start = math.sqrt((dedendum_radius / base_radius)**2 - 1)
+        delta_arc = 2 * profile_shift * tan_pressure - backlash
+        delta_angle = delta_arc / pitch_radius / 2
+        
+        involute_beta = pressure_angle - tan_pressure - (math.pi/2) / teeth - delta_angle
+        trochoid_beta = (math.pi/2) - (math.pi/2) / teeth - delta_angle
+        
+        trochoid_distance = dedendum * tan_pressure
 
-        angle_end = math.sqrt((addendum_radius / (base_radius))**2 - 1)
-        angle_step = (angle_end - angle_start) / points
-        for angle in frange(angle_start, angle_end, angle_step):
-            cos_theta = math.cos(angle + beta)
-            sin_theta = math.sin(angle + beta)
+        def func(params, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius, involute_beta, base_radius):
+            t1, t2 = params
+            p1 = trochoid_point(t1, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius)
+            p2 = involute_point(t2, involute_beta, base_radius)
+            return p1 - p2
 
-            x = base_radius * (cos_theta + angle * sin_theta)
-            y = base_radius * (sin_theta - angle * cos_theta)
+        initial_guess = [0.5, 0.5]
+        lower_bounds = [0, 0]
+        upper_bounds = [2, 2]
+        result = least_squares(func, initial_guess, bounds=(lower_bounds, upper_bounds), args=(trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius, involute_beta, base_radius))
 
-            involute.append((x, y,))
+        if not result.success:
+            print("optimizer fail")
 
-        return involute
+        trochoid_end, involute_start = result.x
+
+        trochoid_start = trochoid_distance / pitch_radius
+        trochoid_step = (trochoid_end - trochoid_start) / points_per_tooth
+        
+        trochoid_points = [None] * (points_per_tooth + 1)
+        for i in range(points_per_tooth + 1):
+            param = trochoid_start + i * trochoid_step
+            
+            x, y = trochoid_point(param, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius)
+            
+            trochoid_points[i] = App.Vector(x, y, 0)
+        
+        trochoid = Part.BSplineCurve()
+        trochoid.interpolate(trochoid_points)
+        trochoid_edge = trochoid.toShape()
+        
+        involute_end = math.sqrt((addendum_radius / (base_radius))**2 - 1)
+
+        involute_end_x, _ = involute_point(involute_end, involute_beta, base_radius)
+
+        keep_outer_arc = involute_end_x > 0
+        if involute_end_x < 0:
+            print("Involute clip before adendum")
+            def func(theta):
+                return (theta - involute_beta) * math.cos(theta) - math.sin(theta)
+        
+            theta_guess = involute_beta + involute_end
+            theta_solution = fsolve(func, theta_guess)[0]
+
+            involute_end = theta_solution - involute_beta
+
+        involute_step = (involute_end - involute_start) / points_per_tooth
+        
+        involute_points = [None] * (points_per_tooth + 1)
+        involute_points[0] = trochoid_points[-1]
+        for i in range(1, points_per_tooth + 1):
+            param = involute_start + i * involute_step
+
+            x, y = involute_point(param, involute_beta, base_radius)
+
+            involute_points[i] = App.Vector(x, y, 0)
+        
+        involute = Part.BSplineCurve()
+        involute.interpolate(involute_points)
+        involute_edge = involute.toShape()
+
+        edges = [trochoid_edge, involute_edge]
+        
+        if keep_outer_arc:
+            center_arc = Part.Arc(mirror_x(involute_points[-1]), App.Vector(0, addendum_radius, 0), involute_points[-1])
+            edges.append(center_arc.toShape())
+
+        center = App.Vector(0, 0, 0)
+        yaxis = App.Vector(0, 1, 0)
+
+        edges.append(involute_edge.copy().rotate(center, yaxis, 180))
+        edges.append(trochoid_edge.copy().rotate(center, yaxis, 180))
+        
+        last_point = App.Vector(-trochoid_points[0].x, trochoid_points[0].y, 0) 
+
+        tooth_cos = math.cos(2*math.pi / teeth)
+        tooth_sin = math.sin(2*math.pi / teeth)
+        
+        px = trochoid_points[0].x * tooth_cos - trochoid_points[0].y * tooth_sin
+        py = trochoid_points[0].x * tooth_sin + trochoid_points[0].y * tooth_cos
+        
+        last_point2 = App.Vector(px, py, 0)
+        midpoint = (last_point.add(last_point2)).multiply(0.5)
+        
+        end_arc = Part.Arc(last_point, midpoint.normalize().multiply(dedendum_radius), last_point2)
+        end_edge = end_arc.toShape()
+        
+        return edges + [end_edge]
 
 def make_gear():
     obj = App.ActiveDocument.addObject("Part::FeaturePython","Gear")
