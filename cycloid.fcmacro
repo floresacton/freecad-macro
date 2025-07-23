@@ -1,0 +1,6 @@
+try:
+    from macro.cycloid.cycloid import make_cycloid
+except ModuleNotFoundError:
+    from cycloid.cycloid import make_cycloid
+
+make_cycloid()
