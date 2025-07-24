@@ -8,45 +8,6 @@ import math
 def mirror_x(v):
     return App.Vector(-v.x, v.y, 0)
 
-# DEFINITIONS
-# pcl = teeth * module / 2 * angle_torchoid - module*math.tan(pressure_angle)
-# dedendum_radius = teeth * module / 2 - module
-
-# base_rad_angle = teeth * module / 2 * math.cos(pressure_angle) * angle_cycloid
-# base_radius = teeth * module / 2 * math.cos(pressure_angle)
-
-# NORMALIZED
-# pcl = angle_torchoid - math.tan(pressure_angle)*(2*/teeth)
-# dedendum_radius = 1 - 2/teeth
-
-# base_rad_angle = math.cos(pressure_angle) * angle_involute
-# base_radius = math.cos(pressure_angle)
-
-# XY ANGLES (ok as long as teeth > 2, because math.tan)
-# = math.atan((teeth/2 - 1) / (teeth/2*angle_torchoid - math.tan(pressure_angle))) + angle_trochoid + math.pi / 2 * (1/teeth - 1) 
-# = math.atan(1/angle_involute) + angle_involute - math.tan(pressure_angle) - pressure_angle - math.pi/teeth/2
-
-# TOTAL ANGLES 
-# angle_involute = math.sqrt((target_radius / base_radius)**2 - 1)
-
-# angle_trochoid = (math.sqrt(target_radius**2-dedendum_radius**2) + t_distance)/pitch_radius
-
-
-
-# DISTANCES
-# 2*trochoid_r/module/teeth = math.hypot(trochoid_angle - 2*math.tan(pressure_angle)/teeth, 1 - 2/teeth)
-# 2*involute_r/module/teeth = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
-
-# = math.sqrt((trochoid_angle - 2*math.tan(pressure_angle)/teeth)**2 + (1 - 2/teeth)**2)
-# = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
-
-# = math.sqrt((trochoid_angle/math.tan(pressure_angle) - 2/teeth)**2 + (1 - 2/teeth)**2 / math.tan(pressure_angle)**2) * math.tan(pressure_angle)
-# = math.cos(pressure_angle) * math.sqrt(involute_angle**2 + 1)
-
-# x = pcl,            y = dedendum_radius
-# x = base_rad_angle, y = base_radius
-
-
 def trochoid_point(param, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius):
     theta = trochoid_beta - param
     
@@ -78,12 +39,12 @@ class Gear:
         obj.Proxy = self
         obj.addProperty("App::PropertyQuantity","Teeth").Teeth = 12
         obj.addProperty("App::PropertyLength","Module").Module = 2
-        obj.addProperty("App::PropertyLength","Height").Height = 10
-        obj.addProperty("App::PropertyAngle","HelixAngle").HelixAngle = 20
+        obj.addProperty("App::PropertyLength","Height").Height = 6
+        obj.addProperty("App::PropertyAngle","HelixAngle").HelixAngle = 0
         obj.addProperty("App::PropertyBool", "DoubleHelix").DoubleHelix = True
         obj.addProperty("App::PropertyBool", "ReverseHelix").ReverseHelix = False
         obj.addProperty("App::PropertyAngle","PressureAngle").PressureAngle = 20
-        obj.addProperty("App::PropertyQuantity","BacklashFactor").BacklashFactor = 0.05
+        obj.addProperty("App::PropertyQuantity","BacklashFactor").BacklashFactor = 0
         obj.addProperty("App::PropertyQuantity","DedendumFactor").DedendumFactor = 1.25
         obj.addProperty("App::PropertyQuantity","AddendumFactor").AddendumFactor = 1
         obj.addProperty("App::PropertyQuantity","ProfileShiftFactor").ProfileShiftFactor = 0
