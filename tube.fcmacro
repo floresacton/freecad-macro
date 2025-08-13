@@ -1,0 +1,6 @@
+try:
+    from macro.tube.tube import make_tube
+except ModuleNotFoundError:
+    from tube.tube import make_tube
+
+make_tube()

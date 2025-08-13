@@ -28,6 +28,30 @@ def cycloid_point(theta, teethp1, eccentricity, teethp1_ecc, outer_radius, outer
 
     return (px, py)
 
+def tooth_edge(teeth, eccentricity, outer_diameter, pin_diameter, points_per_tooth):
+    teethp1 = teeth + 1
+    teethp1_ecc = eccentricity * teethp1
+    
+    outer_radius = outer_diameter / 2
+    pin_radius = pin_diameter / 2
+
+    radians_per_tooth = 2 * math.pi / teeth
+
+    points = [None] * (points_per_tooth + 1)
+    
+    for p in range(points_per_tooth+1):
+        theta = spread(p / points_per_tooth, 0.65) * radians_per_tooth
+        
+        x, y = cycloid_point(theta, teethp1, eccentricity, teethp1_ecc, outer_radius, pin_radius)
+        
+        points[p] = App.Vector(x, y, 0)
+    
+    spline = Part.BSplineCurve()
+    spline.interpolate(points)
+
+    return spline.toShape()
+
+
 class Cycloid:
     def __init__(self, obj):
         obj.Proxy = self
@@ -46,15 +70,15 @@ class Cycloid:
         height = float(obj.Height)
         points_per_tooth = int(obj.PointsPerTooth)
         
-        tooth_edge = self.tooth_edge(teeth, eccentricity, outer_diameter, pin_diameter, points_per_tooth)
+        edge = tooth_edge(teeth, eccentricity, outer_diameter, pin_diameter, points_per_tooth)
         
         center = App.Vector(0, 0, 0)
         axis = App.Vector(0, 0, 1)
         tooth_angle = 360/teeth
         
-        edges = [tooth_edge]
+        edges = [edge]
         for t in range(1, teeth):
-            edge_copy = tooth_edge.copy()
+            edge_copy = edge.copy()
             edge_copy.rotate(center, axis, t*tooth_angle)
             edges.append(edge_copy)
             
@@ -63,29 +87,6 @@ class Cycloid:
         face = Part.Face(wire)
      
         obj.Shape = face.extrude(App.Vector(0, 0, height))
-        
-    def tooth_edge(self, teeth, eccentricity, outer_diameter, pin_diameter, points_per_tooth):
-        teethp1 = teeth + 1
-        teethp1_ecc = eccentricity * teethp1
-        
-        outer_radius = outer_diameter / 2
-        pin_radius = pin_diameter / 2
-
-        radians_per_tooth = 2 * math.pi / teeth
-
-        points = [None] * (points_per_tooth + 1)
-        
-        for p in range(points_per_tooth+1):
-            theta = spread(p / points_per_tooth, 0.65) * radians_per_tooth
-            
-            x, y = cycloid_point(theta, teethp1, eccentricity, teethp1_ecc, outer_radius, pin_radius)
-            
-            points[p] = App.Vector(x, y, 0)
-        
-        spline = Part.BSplineCurve()
-        spline.interpolate(points)
-
-        return spline.toShape()
 
 def make_cycloid():
     obj = App.ActiveDocument.addObject("Part::FeaturePython","Cycloid")
