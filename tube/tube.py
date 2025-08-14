@@ -74,6 +74,7 @@ class Tube:
         inner = round_rect(widthd2-thickness, heightd2-thickness, max(0, fillet-thickness))
 
         face = Part.makeFace([outer, inner])
+        face.translate(App.Vector(0, 0, -length/2))
         obj.Shape = face.extrude(App.Vector(0, 0, length))
  
 def make_tube():
