@@ -8,6 +8,9 @@ import math
 def mirror_x(v):
     return App.Vector(-v.x, v.y, 0)
 
+# (t, 1)
+# rotate by t radians (or more for extra)
+
 def trochoid_point(param, trochoid_beta, trochoid_distance, dedendum_radius, pitch_radius):
     theta = trochoid_beta - param
     
