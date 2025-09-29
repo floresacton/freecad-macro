@@ -27,7 +27,7 @@ def trochoid_point(
     x = dedendum_radius * cos_theta - temp * sin_theta
     y = dedendum_radius * sin_theta + temp * cos_theta
 
-    return np.array([x, y])
+    return np.array([-x, y])
 
 
 def involute_point(param, involute_beta, base_radius):
@@ -41,7 +41,7 @@ def involute_point(param, involute_beta, base_radius):
     x = temp * cos_theta - base_radius * sin_theta
     y = temp * sin_theta + base_radius * cos_theta
 
-    return np.array([x, y])
+    return np.array([-x, y])
 
 
 def tooth_edges(
@@ -133,8 +133,8 @@ def tooth_edges(
 
     involute_end_x, _ = involute_point(involute_end, involute_beta, base_radius)
 
-    keep_outer_arc = involute_end_x > 0
-    if involute_end_x < 0:
+    keep_outer_arc = involute_end_x < 0
+    if involute_end_x > 0:
         print("Involute clip before adendum")
 
         def func(theta):
@@ -160,39 +160,47 @@ def tooth_edges(
     involute.interpolate(involute_points)
     involute_edge = involute.toShape()
 
-    edges = [trochoid_edge, involute_edge]
+    edges = [involute_edge, trochoid_edge]
 
     if keep_outer_arc:
+        start = App.Vector(0, addendum_radius)
+        midpoint = involute_points[-1].add(start).multiply(0.5)
+
         center_arc = Part.Arc(
-            mirror_x(involute_points[-1]),
-            App.Vector(0, addendum_radius, 0),
+            start,
+            midpoint.normalize().multiply(addendum_radius),
             involute_points[-1],
         )
-        edges.append(center_arc.toShape())
+        edges = [center_arc.toShape()] + edges
+
+    last_point = App.Vector(trochoid_points[0].x, trochoid_points[0].y, 0)
+
+    half_ang = math.pi / teeth
+    center_dedendum = App.Vector(-math.sin(half_ang), math.cos(half_ang), 0).multiply(
+        dedendum_radius
+    )
+    midpoint = (last_point.add(center_dedendum)).multiply(0.5)
+
+    end_arc = Part.Arc(
+        last_point, midpoint.normalize().multiply(dedendum_radius), center_dedendum
+    )
+    edges.append(end_arc.toShape())
 
     center = App.Vector(0, 0, 0)
     yaxis = App.Vector(0, 1, 0)
+    zaxis = App.Vector(0, 0, 1)
 
-    edges.append(involute_edge.copy().rotate(center, yaxis, 180))
-    edges.append(trochoid_edge.copy().rotate(center, yaxis, 180))
+    new = edges.copy()
+    num_edges = len(edges)
+    for i in range(num_edges):
+        new.append(
+            edges[num_edges - 1 - i]
+            .copy()
+            .rotate(center, yaxis, 180)
+            .rotate(center, zaxis, 360 / teeth)
+        )
 
-    last_point = App.Vector(-trochoid_points[0].x, trochoid_points[0].y, 0)
-
-    tooth_cos = math.cos(2 * math.pi / teeth)
-    tooth_sin = math.sin(2 * math.pi / teeth)
-
-    px = trochoid_points[0].x * tooth_cos - trochoid_points[0].y * tooth_sin
-    py = trochoid_points[0].x * tooth_sin + trochoid_points[0].y * tooth_cos
-
-    last_point2 = App.Vector(px, py, 0)
-    midpoint = (last_point.add(last_point2)).multiply(0.5)
-
-    end_arc = Part.Arc(
-        last_point, midpoint.normalize().multiply(dedendum_radius), last_point2
-    )
-    end_edge = end_arc.toShape()
-
-    return edges + [end_edge]
+    return new
 
 
 class Gear:
@@ -213,6 +221,7 @@ class Gear:
         ).ProfileShiftFactor = 0
         obj.addProperty("App::PropertyQuantity", "PointsPerTooth").PointsPerTooth = 40
         obj.addProperty("App::PropertyLength", "SecondRadius").SecondRadius = 0
+        obj.addProperty("App::PropertyQuantity", "TeethOverride").TeethOverride = 0
 
     def execute(self, obj):
         teeth = int(obj.Teeth)
@@ -228,6 +237,7 @@ class Gear:
         profile_shift_factor = float(obj.ProfileShiftFactor)
         points_per_tooth = int(obj.PointsPerTooth)
         second_radius = float(obj.SecondRadius)
+        teeth_override = int(obj.TeethOverride)
 
         internal = second_radius > teeth * module / 2
         if internal:
@@ -246,6 +256,9 @@ class Gear:
         )
 
         pitch_radius = teeth * module / 2
+        profile_shift = module * profile_shift_factor
+        addendum = module * addendum_factor + profile_shift
+        addendum_radius = pitch_radius + addendum
 
         angle_per_tooth = 360 / teeth
 
@@ -254,6 +267,10 @@ class Gear:
         yaxis = App.Vector(0, 1, 0)
 
         edges_copy = edges.copy()
+
+        if teeth_override != 0:
+            teeth = teeth_override
+
         for t in range(1, teeth):
             angle = t * angle_per_tooth
             for edge in edges_copy:
@@ -261,14 +278,31 @@ class Gear:
                 edge_copy.rotate(center, zaxis, angle)
                 edges.append(edge_copy)
 
-        wire = Part.Wire(edges)
+        if teeth_override != 0:
+            last = Part.makeLine(
+                App.Vector(0, second_radius, 0), App.Vector(0, addendum_radius, 0)
+            )
+            first = last.copy().rotate(center, zaxis, angle_per_tooth * teeth)
+            edges.append(first)
+            if second_radius != 0:
+                p1, p2 = first.Vertexes[0].Point, last.Vertexes[0].Point
+                midpoint = p1.add(p2).multiply(0.5)
+                arc = Part.Arc(p1, midpoint.normalize().multiply(second_radius), p2)
+                edges.append(arc.toShape())
+
+            edges.append(last)
+
+        if teeth_override:
+            wire = Part.Wire(edges)
+        else:
+            wire = Part.Wire(edges)
 
         heightd2 = height / 2
 
         if helix_angle == 0:
             wire.translate(App.Vector(0, 0, -heightd2))
 
-            if second_radius != 0:
+            if second_radius != 0 and teeth_override == 0:
                 circle = Part.Circle(
                     App.Vector(0, 0, -heightd2), App.Vector(0, 0, -1), second_radius
                 )
