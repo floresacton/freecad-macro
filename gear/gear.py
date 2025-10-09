@@ -292,10 +292,7 @@ class Gear:
 
             edges.append(last)
 
-        if teeth_override:
-            wire = Part.Wire(edges)
-        else:
-            wire = Part.Wire(edges)
+        wire = Part.Wire(edges)
 
         heightd2 = height / 2
 
@@ -328,7 +325,7 @@ class Gear:
             wire_top = pipe_shell.lastShape()
 
             shell_faces = []
-            if second_radius == 0:
+            if second_radius == 0 or teeth_override != 0:
                 face_top = Part.Face([wire_top])
             else:
                 circle = Part.Circle(

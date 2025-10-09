@@ -1,0 +1,6 @@
+try:
+    from macro.sprocket.sprocket import make_sprocket
+except ModuleNotFoundError:
+    from sprocket.sprocket import make_sprocket
+
+make_sprocket()
