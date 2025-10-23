@@ -4,3 +4,26 @@ __pycache__/
 ### Sheet Metal Workspace ###
 SheetMetalUnfoldUpdater.FCMacro
 
+### CfdOf ###
+00-RunAll.FCMacro
+01-geom.FCMacro
+01-geometry.FCMacro
+01-partDesign.FCMacro
+02-analysis.FCMacro
+02-firstAnalysis.FCMacro
+02-mesh.FCMacro
+03-MovingMeshRegion.FCMacro
+03-boundaries.FCMacro
+03-porous.FCMacro
+03-probes.FCMacro
+03-refineMesh.FCMacro
+04-adaptiveMesh.FCMacro
+04-forceCoeffs.FCMacro
+04-forces.FCMacro
+04-screen.FCMacro
+05-adaptiveMesh.FCMacro
+BatteryCooling.FCMacro
+backwardStep.FCMacro
+elbow.FCMacro
+viscousTubeBundle.FCMacro
+
